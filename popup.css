@@ -1,0 +1,89 @@
+body {
+  width: 300px;
+  margin: 0;
+  padding: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  color: #1f2328;
+  background: #fff;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  background: #f0f2f5;
+}
+
+.status.active {
+  background: #fdecec;
+  color: #b3261e;
+}
+
+.status.inactive {
+  background: #e9f7ec;
+  color: #1a7f37;
+}
+
+#add-form {
+  display: flex;
+  gap: 6px;
+}
+
+#add-input {
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+#add-form button {
+  padding: 7px 12px;
+  border: none;
+  border-radius: 6px;
+  background: #1f2328;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.error {
+  color: #b3261e;
+  margin-top: 6px;
+}
+
+#site-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+#site-list li {
+  padding: 6px 4px;
+  border-bottom: 1px solid #eef1f4;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.empty {
+  margin-top: 12px;
+  color: #6e7781;
+  text-align: center;
+}
+
+.footer {
+  margin-top: 12px;
+  text-align: center;
+}
+
+.footer a {
+  color: #0969da;
+  text-decoration: none;
+}
