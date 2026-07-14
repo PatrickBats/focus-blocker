@@ -23,7 +23,7 @@ mid-workday. Plain HTML/CSS/JS, Manifest V3, no build step, no dependencies.
 
 1. Clone or download this repository:
    ```
-   git clone https://github.com/YOURNAME/focus-blocker.git
+   git clone https://github.com/PatrickBats/focus-blocker.git
    ```
 2. Open `chrome://extensions`
 3. Turn on **Developer mode** (top right)
