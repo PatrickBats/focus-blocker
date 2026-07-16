@@ -43,9 +43,42 @@ function isWithinWorkHours(schedule, now = new Date()) {
 
 // ---- Rule sync -------------------------------------------------------------
 
+// Block every request type, not just page loads: sites like X and YouTube
+// install a service worker that serves the app shell from local cache, so the
+// navigation itself never reaches the network layer. Starving the shell of
+// scripts, API calls, and websockets blocks them anyway.
+const BLOCKED_RESOURCE_TYPES = [
+  "main_frame", "sub_frame", "stylesheet", "script", "image", "font",
+  "object", "xmlhttprequest", "ping", "media", "websocket", "webtransport",
+  "other",
+];
+
+function domainMatches(url, blocklist) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return blocklist.some((d) => host === d || host.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+// Rules can't touch tabs that are already open (or served from a site
+// service worker's cache), so close them outright while blocking is active.
+async function closeBlockedTabs(blocklist) {
+  const tabs = await chrome.tabs.query({});
+  const doomed = tabs.filter((t) => t.url && domainMatches(t.url, blocklist));
+  if (doomed.length) {
+    await chrome.tabs.remove(doomed.map((t) => t.id));
+  }
+}
+
 async function syncRules() {
   const state = await getState();
   const active = isWithinWorkHours(state.schedule);
+  if (active && state.blocklist.length) {
+    await closeBlockedTabs(state.blocklist);
+  }
+
   const desired = active
     ? [...state.blocklist].sort().map((domain, i) => ({
         id: i + 1,
@@ -53,14 +86,17 @@ async function syncRules() {
         action: { type: "block" },
         condition: {
           urlFilter: `||${domain}^`,
-          resourceTypes: ["main_frame"],
+          resourceTypes: BLOCKED_RESOURCE_TYPES,
         },
       }))
     : [];
 
   const current = await chrome.declarativeNetRequest.getDynamicRules();
   const key = (rules) =>
-    rules.map((r) => `${r.id}:${r.condition.urlFilter}`).sort().join("|");
+    rules
+      .map((r) => `${r.id}:${r.condition.urlFilter}:${(r.condition.resourceTypes || []).length}`)
+      .sort()
+      .join("|");
   if (key(current) === key(desired)) return;
 
   await chrome.declarativeNetRequest.updateDynamicRules({

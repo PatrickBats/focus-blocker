@@ -8,7 +8,10 @@ mid-workday. Plain HTML/CSS/JS, Manifest V3, no build step, no dependencies.
 
 - **Hard block** — blocked sites fail to load entirely (`ERR_BLOCKED_BY_CLIENT`),
   enforced natively by Chrome's `declarativeNetRequest` API. Covers `www.` and
-  other subdomains automatically.
+  other subdomains automatically. All request types are blocked (not just page
+  loads), which defeats sites like X and YouTube that serve themselves from a
+  service-worker cache — and any tab already open on a blocked site is closed
+  automatically when blocking kicks in.
 - **Work-hours schedule** — pick the days and start/end times when blocking is
   active. Outside those hours, everything is unblocked. Overnight windows
   (e.g. 10 PM–6 AM) work too.
