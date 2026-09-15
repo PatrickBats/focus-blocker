@@ -1,50 +1,50 @@
 async function refresh() {
-  const res = await send("getStatus");
-  if (!res?.ok) return;
-  const { state, active, locked } = res;
-
-  const statusEl = document.getElementById("status");
-  const icon = document.getElementById("status-icon");
-  const text = document.getElementById("status-text");
-  statusEl.classList.toggle("active", active);
-  statusEl.classList.toggle("inactive", !active);
-  if (active) {
-    icon.textContent = locked ? "🔒" : "⛔";
-    text.textContent = `Blocking active — ends at ${formatTime(state.schedule.end)}`;
-  } else {
-    icon.textContent = "🟢";
-    text.textContent = "Off the clock — nothing blocked";
+  const result = await send('getStatus');
+  showHealth(result);
+  if (!result.ok) {
+    document.getElementById('status').textContent = 'Blocking status unavailable';
+    return;
   }
-
-  const list = document.getElementById("site-list");
-  list.replaceChildren(
-    ...state.blocklist.map((domain) => {
-      const li = document.createElement("li");
-      li.textContent = domain;
-      return li;
-    })
-  );
-  document.getElementById("empty").hidden = state.blocklist.length > 0;
+  const { state, active, nextUnlock } = result;
+  const status = document.getElementById('status');
+  status.className = 'status ' + (active ? 'active' : 'inactive');
+  status.textContent = result.enforcementError ? 'Blocking needs attention' :
+    active && state.blocklist.length ? (nextUnlock ? 'Blocking until ' + formatDate(nextUnlock) : 'Blocking active') :
+    active ? 'No sites in your blocklist' : 'Off the clock — nothing blocked';
+  document.getElementById('site-list').replaceChildren(...state.blocklist.map((domain) => {
+    const li = document.createElement('li');
+    li.textContent = domain;
+    return li;
+  }));
+  document.getElementById('empty').hidden = state.blocklist.length > 0;
+  const button = document.getElementById('block-current');
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const domain = FocusCore.normalizeDomain(tab?.url);
+    const covered = FocusCore.domainMatches(tab?.url, state.blocklist);
+    button.disabled = !domain || covered;
+    button.textContent = covered ? 'Already on your blocklist' : 'Block this site';
+    document.getElementById('current-domain').textContent = domain || 'Open a website to block it in one click.';
+  } catch {
+    button.disabled = true;
+    document.getElementById('current-domain').textContent = 'Could not read the current tab.';
+  }
 }
-
-document.getElementById("add-form").addEventListener("submit", async (e) => {
+async function add(type, payload) {
+  const res = await send(type, payload);
+  showMessage(res.ok ? 'Site added.' : (res.saved ? 'Saved; blocking needs attention: ' : '') + res.error, !res.ok);
+  if (res.ok || res.saved) document.getElementById('add-input').value = '';
+  await refresh();
+}
+document.getElementById('block-current').addEventListener('click', () => add('blockCurrentSite'));
+document.getElementById('add-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  const input = document.getElementById("add-input");
-  const errEl = document.getElementById("add-error");
-  const res = await send("addSite", { domain: input.value });
-  if (res.ok) {
-    input.value = "";
-    errEl.hidden = true;
-    refresh();
-  } else {
-    errEl.textContent = res.error;
-    errEl.hidden = false;
-  }
+  add('addSite', { domain: document.getElementById('add-input').value });
 });
-
-document.getElementById("open-options").addEventListener("click", (e) => {
+document.getElementById('retry').addEventListener('click', refresh);
+document.getElementById('open-options').addEventListener('click', (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
 });
-
 refresh();
+setInterval(refresh, 15000);

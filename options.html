@@ -1,54 +1,60 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Focus Blocker — Settings</title>
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
   <main>
+    <p class="eyebrow">MAKE ROOM FOR WHAT MATTERS</p>
     <h1>Focus Blocker</h1>
-
-    <div id="lock-banner" class="banner" hidden>
-      🔒 Lockdown is active until work hours end. You can add sites and expand
-      the schedule, but nothing can be weakened.
+    <p class="muted">A little help staying on task.</p>
+    <div id="health" class="message err" role="alert" hidden>
+      <span id="health-text"></span> <button id="retry">Retry blocking</button>
     </div>
-
+    <div id="lock-banner" class="banner" hidden></div>
+    <div id="pending" class="banner" hidden>Weekend hours will change to 8 AM–4 PM after the current lock ends.</div>
     <section>
       <h2>Blocked sites</h2>
       <form id="add-form">
-        <input id="add-input" type="text" placeholder="e.g. reddit.com" autocomplete="off">
-        <button type="submit">Add</button>
+        <label class="sr-only" for="add-input">Website to block</label>
+        <input id="add-input" type="text" placeholder="e.g. reddit.com" autocomplete="off" required>
+        <button type="submit">Add site</button>
       </form>
       <ul id="site-list"></ul>
-      <div id="empty" class="muted" hidden>No sites blocked yet.</div>
+      <p id="empty" class="muted" hidden>No sites blocked yet.</p>
     </section>
-
     <section>
-      <h2>Work hours</h2>
-      <div id="days" class="days"></div>
-      <div class="times">
-        <label>From <input id="start-time" type="time"></label>
-        <label>to <input id="end-time" type="time"></label>
-      </div>
+      <h2>Blocking hours</h2>
+      <p class="muted">Times follow your computer’s local time. An end earlier than the start continues into the next day. Equal times mean off.</p>
+      <div id="schedule-groups"></div>
       <button id="save-schedule">Save schedule</button>
     </section>
-
     <section>
       <h2>Lockdown mode</h2>
-      <p class="muted">
-        While work hours are active, lockdown prevents removing sites, shrinking
-        the schedule, or turning itself off — until the workday ends.
-      </p>
-      <label class="toggle">
-        <input id="lockdown" type="checkbox">
-        Enable lockdown
-      </label>
+      <p class="muted">During blocking hours, you can add sites or expand hours. Removing sites, shortening hours, and turning lockdown off must wait until unlock.</p>
+      <label class="toggle"><input id="lockdown" type="checkbox"> Enable lockdown</label>
     </section>
-
-    <div id="message" class="message" hidden></div>
+    <section>
+      <h2>Back up your settings</h2>
+      <p class="muted">Save your sites, hours, and lockdown setting in a file you can restore later.</p>
+      <div class="actions">
+        <button id="export">Export backup</button>
+        <label class="file-label">Import backup<input id="import" type="file" accept=".json,application/json"></label>
+      </div>
+      <div id="import-preview" class="preview" hidden>
+        <h3>Replace your settings?</h3>
+        <p id="import-summary"></p>
+        <p class="muted">This replaces your current sites and schedule. Lockdown rules still apply.</p>
+        <button id="confirm-import">Replace settings</button>
+        <button id="cancel-import" class="secondary">Cancel</button>
+      </div>
+    </section>
+    <div id="message" class="message" role="status" hidden></div>
+    <p class="footer"><a href="blocked.html" target="_blank">Preview the cat page ↗</a></p>
   </main>
-
   <script src="common.js"></script>
   <script src="options.js"></script>
 </body>

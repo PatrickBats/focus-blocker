@@ -1,14 +1,27 @@
-// Shared helpers for popup and options pages.
-
-function send(type, payload = {}) {
-  return chrome.runtime.sendMessage({ type, ...payload });
+async function send(type, payload = {}) {
+  try {
+    const result = await chrome.runtime.sendMessage({ type, ...payload });
+    return result || { ok: false, error: 'The extension did not respond. Please retry.' };
+  } catch (e) { return { ok: false, error: e.message }; }
 }
-
 function formatTime(hhmm) {
-  const [h, m] = hhmm.split(":").map(Number);
-  const ampm = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
-
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function formatDate(timestamp) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'long', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  }).format(new Date(timestamp));
+}
+function showMessage(text, isError = false) {
+  const el = document.getElementById('message');
+  el.textContent = text;
+  el.className = 'message ' + (isError ? 'err' : 'ok');
+  el.hidden = !text;
+}
+function showHealth(result) {
+  const el = document.getElementById('health');
+  const error = result.enforcementError || (!result.ok ? result.error : null);
+  el.hidden = !error;
+  document.getElementById('health-text').textContent = error || '';
+}

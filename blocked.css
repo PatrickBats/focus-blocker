@@ -1,0 +1,33 @@
+:root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #303d2c; background: #f7f5ee; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 40px; }
+main { width: min(1080px, 100%); display: grid; grid-template-columns: 1fr 1fr; background: #fffef9; border: 1px solid #e7e3d6; border-radius: 28px; overflow: hidden; box-shadow: 0 18px 65px #333b2510; }
+.art { background: #f1eadb; display: flex; align-items: center; }
+.art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.content { padding: 54px 44px 36px; }
+.eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 2.3px; display: flex; align-items: center; gap: 8px; margin: 0 0 32px; }
+.dot { width: 7px; height: 7px; background: #7e965f; border-radius: 50%; }
+h1 { font-family: Georgia, "Times New Roman", serif; font-size: clamp(32px, 3.3vw, 43px); font-weight: 500; letter-spacing: -1.2px; line-height: 1.16; margin: 0 0 18px; }
+.intro { font-size: 15px; line-height: 1.6; color: #65705b; margin: 0 0 28px; }
+.timer-panel { border: 1px solid #e1e5d6; border-radius: 14px; background: #f2f5eb; padding: 20px; }
+#until { margin: 0 0 10px; font-size: 13px; font-weight: 600; line-height: 1.5; }
+#countdown { font-size: clamp(32px, 3.5vw, 45px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.timer-note { font-size: 11px; color: #66725c; margin: 10px 0 0; }
+button { font: inherit; cursor: pointer; border: 0; border-radius: 8px; padding: 10px 14px; background: #44583b; color: white; }
+.settings { margin-top: 24px; padding: 0; background: none; color: #415738; font-size: 13px; font-weight: 600; }
+.settings span { margin-left: 8px; }
+.footnote { margin: 30px 0 0; font-size: 11px; color: #727b66; }
+#health { margin-top: 16px; padding: 12px; border-radius: 8px; background: #ffede9; color: #922f28; font-size: 13px; }
+#health p { margin: 0 0 8px; }
+:focus-visible { outline: 3px solid #ac8b41; outline-offset: 4px; }
+[hidden] { display: none !important; }
+@media (max-width: 760px) {
+  body { padding: 20px; }
+  main { max-width: 480px; grid-template-columns: 1fr; border-radius: 20px; }
+  .art { aspect-ratio: 1.35; overflow: hidden; }
+  .art img { object-position: center 45%; }
+  .content { padding: 28px; }
+  .eyebrow { margin-bottom: 22px; }
+  h1 { font-size: 34px; }
+}
+@media (max-width: 380px) { body { padding: 12px; } .content { padding: 22px; } h1 { font-size: 30px; } }

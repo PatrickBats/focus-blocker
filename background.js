@@ -1,231 +1,154 @@
-// Focus Blocker — service worker.
-// Owns all state mutations (so lockdown can't be bypassed) and keeps
-// declarativeNetRequest dynamic rules in sync with the schedule.
+importScripts('core.js');
+const C = FocusCore;
+const BLOCKED_URL = chrome.runtime.getURL('blocked.html');
+const HOSTS = ['http://*/*', 'https://*/*'];
+let queue = Promise.resolve();
+let enforcementError = null;
 
-const DEFAULT_STATE = {
-  blocklist: [
-    "instagram.com",
-    "reddit.com",
-    "tiktok.com",
-    "twitter.com",
-    "x.com",
-  ],
-  schedule: { days: [0, 1, 2, 3, 4, 5, 6], start: "08:00", end: "20:00" },
-  lockdown: false,
-};
-
+// Mutations and reconciliations share one queue, so newer settings always win.
+function enqueue(fn) {
+  const task = queue.then(fn);
+  queue = task.catch(() => {});
+  return task;
+}
 async function getState() {
-  const stored = await chrome.storage.sync.get(DEFAULT_STATE);
-  return { ...DEFAULT_STATE, ...stored };
-}
-
-function toMinutes(hhmm) {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function isWithinWorkHours(schedule, now = new Date()) {
-  const mins = now.getHours() * 60 + now.getMinutes();
-  const start = toMinutes(schedule.start);
-  const end = toMinutes(schedule.end);
-  if (start === end) return false;
-  const day = now.getDay();
-  if (start < end) {
-    return schedule.days.includes(day) && mins >= start && mins < end;
+  const stored = await chrome.storage.sync.get(['focusState', 'blocklist', 'schedule', 'lockdown']);
+  const state = C.migrate(stored);
+  let changed = !stored.focusState;
+  if (state.pendingSchedule && !C.isActive(state.schedule)) {
+    state.schedule = state.pendingSchedule;
+    delete state.pendingSchedule;
+    changed = true;
   }
-  // Overnight window (e.g. 22:00–06:00): either it started today,
-  // or it started yesterday and hasn't ended yet.
-  return (
-    (schedule.days.includes(day) && mins >= start) ||
-    (schedule.days.includes((day + 6) % 7) && mins < end)
-  );
+  if (changed) await chrome.storage.sync.set({ focusState: state });
+  return state;
 }
-
-// ---- Rule sync -------------------------------------------------------------
-
-// Block every request type, not just page loads: sites like X and YouTube
-// install a service worker that serves the app shell from local cache, so the
-// navigation itself never reaches the network layer. Starving the shell of
-// scripts, API calls, and websockets blocks them anyway.
-const BLOCKED_RESOURCE_TYPES = [
-  "main_frame", "sub_frame", "stylesheet", "script", "image", "font",
-  "object", "xmlhttprequest", "ping", "media", "websocket", "webtransport",
-  "other",
-];
-
-function domainMatches(url, blocklist) {
+async function ensureAlarm() {
+  if (!await chrome.alarms.get('tick')) await chrome.alarms.create('tick', { periodInMinutes: 1 });
+}
+async function reconcile() {
+  const errors = [];
+  let state, times;
   try {
-    const host = new URL(url).hostname.toLowerCase();
-    return blocklist.some((d) => host === d || host.endsWith(`.${d}`));
-  } catch {
-    return false;
+    state = await getState();
+    times = C.timing(state.schedule);
+    try {
+      await ensureAlarm();
+      if (times.nextChange) await chrome.alarms.create('boundary', { when: times.nextChange });
+      else await chrome.alarms.clear('boundary');
+    } catch (e) { errors.push('Could not schedule the next blocking change: ' + e.message); }
+    const desired = C.buildRules(state, times.active, BLOCKED_URL);
+    const current = await chrome.declarativeNetRequest.getDynamicRules();
+    const canonical = (value) => JSON.stringify(value, function (_key, v) {
+      return v && typeof v === 'object' && !Array.isArray(v)
+        ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v;
+    });
+    if (canonical(current.sort((a, b) => a.id - b.id)) !== canonical(desired)) {
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: current.map((r) => r.id), addRules: desired,
+      });
+    }
+    if (times.active && state.blocklist.length && !await chrome.permissions.contains({ origins: HOSTS })) {
+      errors.push('Allow access to all sites in Chrome’s extension details so the blocked page can work.');
+    }
+  } catch (e) { errors.push('Could not update blocking: ' + e.message); }
+  // A closed/disappearing tab must not prevent network rules from updating.
+  if (state && times?.active && state.blocklist.length) {
+    try {
+      const tabs = await chrome.tabs.query({});
+      await Promise.all(tabs.filter((t) => C.domainMatches(t.pendingUrl || t.url, state.blocklist))
+        .map(async (t) => {
+          try {
+            const latest = await chrome.tabs.get(t.id);
+            if (latest.pendingUrl === BLOCKED_URL || latest.url === BLOCKED_URL) return;
+            if (!C.domainMatches(latest.pendingUrl || latest.url, state.blocklist)) return;
+            await chrome.tabs.update(t.id, { url: BLOCKED_URL });
+          }
+          catch (e) {
+            try { await chrome.tabs.get(t.id); } catch { return; }
+            errors.push('Could not show the blocked page in a tab: ' + e.message);
+          }
+        }));
+    } catch (e) { errors.push('Could not check open tabs: ' + e.message); }
   }
+  enforcementError = errors.length ? errors.join(' ') : null;
+  return { state, ...times, enforcementError };
 }
-
-// Rules can't touch tabs that are already open (or served from a site
-// service worker's cache), so close them outright while blocking is active.
-async function closeBlockedTabs(blocklist) {
-  const tabs = await chrome.tabs.query({});
-  const doomed = tabs.filter((t) => t.url && domainMatches(t.url, blocklist));
-  if (doomed.length) {
-    await chrome.tabs.remove(doomed.map((t) => t.id));
-  }
+async function status() {
+  const result = await reconcile();
+  if (!result.state) throw new Error(result.enforcementError || 'Settings unavailable.');
+  return { ok: true, ...result, locked: result.state.lockdown && result.active };
 }
-
-async function syncRules() {
-  const state = await getState();
-  const active = isWithinWorkHours(state.schedule);
-  if (active && state.blocklist.length) {
-    await closeBlockedTabs(state.blocklist);
-  }
-
-  const desired = active
-    ? [...state.blocklist].sort().map((domain, i) => ({
-        id: i + 1,
-        priority: 1,
-        action: { type: "block" },
-        condition: {
-          urlFilter: `||${domain}^`,
-          resourceTypes: BLOCKED_RESOURCE_TYPES,
-        },
-      }))
-    : [];
-
-  const current = await chrome.declarativeNetRequest.getDynamicRules();
-  const key = (rules) =>
-    rules
-      .map((r) => `${r.id}:${r.condition.urlFilter}:${(r.condition.resourceTypes || []).length}`)
-      .sort()
-      .join("|");
-  if (key(current) === key(desired)) return;
-
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: current.map((r) => r.id),
-    addRules: desired,
-  });
+async function save(next, old) {
+  C.assertAllowed(old, next);
+  C.assertFits(next);
+  await chrome.storage.sync.set({ focusState: next });
+  const result = await reconcile();
+  return { ok: !result.enforcementError, saved: true, error: result.enforcementError };
 }
-
-function ensureAlarm() {
-  chrome.alarms.create("tick", { periodInMinutes: 1 });
-}
-
-chrome.runtime.onInstalled.addListener(() => {
-  ensureAlarm();
-  syncRules();
-});
-chrome.runtime.onStartup.addListener(() => {
-  ensureAlarm();
-  syncRules();
-});
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "tick") syncRules();
-});
-chrome.storage.onChanged.addListener(() => syncRules());
-
-// Also runs each time the service worker wakes up for any reason.
-ensureAlarm();
-syncRules();
-
-// ---- State mutations (with lockdown enforcement) ---------------------------
-
-function isLocked(state) {
-  return state.lockdown && isWithinWorkHours(state.schedule);
-}
-
-function normalizeDomain(input) {
-  let d = String(input || "").trim().toLowerCase();
-  d = d.replace(/^[a-z]+:\/\//, "").split("/")[0].split(":")[0];
-  d = d.replace(/^www\./, "");
-  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) return null;
-  return d;
-}
-
-function sanitizeSchedule(schedule) {
-  if (!schedule || !Array.isArray(schedule.days)) return null;
-  const days = [...new Set(schedule.days)]
-    .map(Number)
-    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-    .sort();
-  const timeOk = (t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
-  if (!timeOk(schedule.start) || !timeOk(schedule.end)) return null;
-  return { days, start: schedule.start, end: schedule.end };
-}
-
-// A schedule change is an "expansion" if it only ever blocks MORE:
-// same-or-more days, same-or-earlier start, same-or-later end.
-// Overnight windows are too ambiguous to compare, so they never count.
-function isExpansion(oldS, newS) {
-  const oldStart = toMinutes(oldS.start);
-  const oldEnd = toMinutes(oldS.end);
-  const newStart = toMinutes(newS.start);
-  const newEnd = toMinutes(newS.end);
-  if (oldStart > oldEnd || newStart > newEnd) return false;
-  return (
-    oldS.days.every((d) => newS.days.includes(d)) &&
-    newStart <= oldStart &&
-    newEnd >= oldEnd
-  );
-}
-
 const handlers = {
-  async getStatus() {
-    const state = await getState();
-    const active = isWithinWorkHours(state.schedule);
-    return { ok: true, state, active, locked: state.lockdown && active };
-  },
-
+  getStatus: status,
+  retry: status,
   async addSite({ domain }) {
-    const d = normalizeDomain(domain);
-    if (!d) {
-      return { ok: false, error: "That doesn't look like a valid domain (try e.g. reddit.com)." };
-    }
+    const d = C.normalizeDomain(domain);
+    if (!d) throw new Error('Enter a valid website, such as reddit.com.');
     const state = await getState();
-    if (!state.blocklist.includes(d)) {
-      await chrome.storage.sync.set({ blocklist: [...state.blocklist, d].sort() });
-    }
-    return { ok: true };
+    const next = { ...state, blocklist: [...new Set([...state.blocklist, d])].sort() };
+    return save(next, state);
   },
-
+  async blockCurrentSite() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return handlers.addSite({ domain: tab?.url });
+  },
   async removeSite({ domain }) {
     const state = await getState();
-    if (isLocked(state)) {
-      return { ok: false, error: "Lockdown is on — sites can't be removed until work hours end." };
-    }
-    await chrome.storage.sync.set({
-      blocklist: state.blocklist.filter((x) => x !== domain),
-    });
-    return { ok: true };
+    return save({ ...state, blocklist: state.blocklist.filter((d) => d !== domain) }, state);
   },
-
   async setSchedule({ schedule }) {
-    const clean = sanitizeSchedule(schedule);
-    if (!clean) return { ok: false, error: "Invalid schedule." };
     const state = await getState();
-    if (isLocked(state) && !isExpansion(state.schedule, clean)) {
-      return { ok: false, error: "Lockdown is on — the schedule can only be expanded until work hours end." };
-    }
-    await chrome.storage.sync.set({ schedule: clean });
-    return { ok: true };
+    const next = { ...state, schedule: C.sanitizeSchedule(schedule) };
+    delete next.pendingSchedule;
+    return save(next, state);
   },
-
   async setLockdown({ enabled }) {
+    if (typeof enabled !== 'boolean') throw new Error('Invalid lockdown setting.');
     const state = await getState();
-    if (!enabled && isLocked(state)) {
-      return { ok: false, error: "Nice try 🙂 Lockdown turns off after work hours end." };
-    }
-    await chrome.storage.sync.set({ lockdown: !!enabled });
-    return { ok: true };
+    return save({ ...state, lockdown: enabled }, state);
+  },
+  async exportSettings() {
+    const state = await getState();
+    return { ok: true, backup: { app: 'focus-blocker', version: 2, settings: C.validateState(state) } };
+  },
+  async previewImport({ backup }) {
+    if (backup?.app !== 'focus-blocker' || backup.version !== 2) throw new Error('Not a supported Focus Blocker backup.');
+    const next = C.validateState(backup.settings);
+    C.assertAllowed(await getState(), next);
+    return { ok: true, state: next };
+  },
+  async importSettings({ backup }) {
+    const { state: next } = await handlers.previewImport({ backup });
+    return save(next, await getState());
   },
 };
-
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  const handler = handlers[msg?.type];
-  if (!handler) {
-    sendResponse({ ok: false, error: `Unknown message: ${msg?.type}` });
-    return false;
-  }
-  handler(msg)
-    .then(sendResponse)
-    .catch((e) => sendResponse({ ok: false, error: e.message }));
-  return true; // keep the message channel open for the async response
+chrome.runtime.onMessage.addListener((msg, sender, respond) => {
+  if (sender.id !== chrome.runtime.id || !Object.hasOwn(handlers, msg?.type)) return false;
+  enqueue(() => handlers[msg.type](msg)).then(respond)
+    .catch((e) => respond({ ok: false, error: e.message }));
+  return true;
 });
+const requestSync = () => { enqueue(reconcile).catch((e) => { enforcementError = e.message; }); };
+chrome.runtime.onInstalled.addListener(requestSync);
+chrome.runtime.onStartup.addListener(requestSync);
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (['tick', 'boundary'].includes(alarm.name)) requestSync();
+});
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && ['focusState', 'schedule', 'blocklist', 'lockdown'].some((k) => changes[k])) requestSync();
+});
+chrome.tabs.onUpdated.addListener((_id, change) => {
+  if (change.url || change.status === 'complete') requestSync();
+});
+chrome.tabs.onActivated.addListener(requestSync);
+chrome.permissions.onAdded.addListener(requestSync);
+chrome.permissions.onRemoved.addListener(requestSync);
+requestSync();
