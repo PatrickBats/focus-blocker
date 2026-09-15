@@ -1,13 +1,25 @@
-# Focus Blocker
+<h1 align="center">🐾 Focus Blocker</h1>
 
-**A little help staying on task.**
+<p align="center"><strong>Less scrolling. More doing. A little company along the way.</strong></p>
+
+<p align="center">
+  <img src="assets/working-cat.png" width="420" alt="A little orange cat in a cozy green sweater, typing away at a laptop.">
+  <br>
+  <em>Your tiny desk buddy is rooting for you.</em>
+</p>
+
+<p align="center">
+  <a href="#install-in-chrome">Get started</a> ·
+  <a href="#your-first-setup">Make it yours</a> ·
+  <a href="#back-up-or-restore-your-setup">Save your setup</a>
+</p>
 
 Focus Blocker is a lightweight Chrome extension that puts distracting websites
 on a schedule. Choose your sites and hours, then get back to what you meant to
-do. When you visit a blocked site, a dedicated page shows a live countdown
-to your next unlock.
+do. When you visit a blocked site, a cozy cat page shows a live countdown
+to your next unlock. One thing at a time. You've got this.
 
-## What it does
+## A little help with focus 🌱
 
 - **Scheduled blocking:** separate weekday and weekend hours, with overnight support.
 - **A friendly blocked page:** cat artwork, the exact next unlock time, and a live countdown.
@@ -216,3 +228,7 @@ See [the artwork notes](assets/ARTWORK.md) for the exact prompt.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+<p align="center"><em>Small steps. Very serious paws. 🐾</em></p>
